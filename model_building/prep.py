@@ -1,6 +1,4 @@
-# -----------------------------
-# prep.py - Data Preparation
-# -----------------------------
+# model_building/prep.py
 
 import os
 import pandas as pd
@@ -13,25 +11,27 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 if not HF_TOKEN:
     raise ValueError("HF_TOKEN environment variable not set. Please set it before running.")
 
-api = HfApi(token=HF_TOKEN)
+# Paths
+DATASET_URL = "https://raw.githubusercontent.com/absethi/MLOps/main/data/tourism.csv"
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# Dataset path
-DATASET_PATH = "https://raw.githubusercontent.com/absethi/MLOps/main/data/tourism.csv"
-df = pd.read_csv(DATASET_PATH)
+# Load dataset
+df = pd.read_csv(DATASET_URL)
 print("Dataset loaded successfully.")
 print("Columns in dataset:", list(df.columns))
 
-# Drop unique identifier
+# Drop unique identifier if exists
 df.drop(columns=['UDI'], inplace=True, errors='ignore')
 
-# Encode 'Type' column if exists
+# Encode categorical 'Type' column if exists
 label_encoder = LabelEncoder()
 if 'Type' in df.columns:
     df['Type'] = label_encoder.fit_transform(df['Type'])
 else:
     print("Warning: 'Type' column not found in dataset.")
 
-# Define target column
+# Set target column
 target_col = 'Failure'
 if target_col not in df.columns:
     print(f"Warning: Target column '{target_col}' not found. Using first column as target instead.")
@@ -44,36 +44,36 @@ y = df[target_col]
 # Train-test split
 Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Create local folder for splits
-os.makedirs("data", exist_ok=True)
-
-# Save splits
-Xtrain.to_csv("data/Xtrain.csv", index=False)
-Xtest.to_csv("data/Xtest.csv", index=False)
-ytrain.to_csv("data/ytrain.csv", index=False)
-ytest.to_csv("data/ytest.csv", index=False)
-
-print("Train-test splits saved locally in 'data/' folder.")
+# Save splits locally
+Xtrain.to_csv(os.path.join(DATA_DIR, "Xtrain.csv"), index=False)
+Xtest.to_csv(os.path.join(DATA_DIR, "Xtest.csv"), index=False)
+ytrain.to_csv(os.path.join(DATA_DIR, "ytrain.csv"), index=False)
+ytest.to_csv(os.path.join(DATA_DIR, "ytest.csv"), index=False)
+print("Train-test splits saved locally.")
 
 # -----------------------------
-# Upload dataset to Hugging Face
+# Upload splits to Hugging Face Dataset
 # -----------------------------
-repo_id = "absethi1894/Visit_with_Us"
+api = HfApi(token=HF_TOKEN)
+dataset_repo_id = "absethi1894/Visit_with_Us"
+
+# Ensure repo exists
 try:
-    api.repo_info(repo_id=repo_id, repo_type="dataset")
-    print(f"Dataset repo '{repo_id}' exists. Using it.")
+    api.repo_info(repo_id=dataset_repo_id, repo_type="dataset")
+    print(f"Dataset repo '{dataset_repo_id}' already exists.")
 except:
-    print(f"Dataset repo '{repo_id}' not found. Creating...")
-    create_repo(repo_id=repo_id, repo_type="dataset", private=False)
-    print(f"Dataset repo '{repo_id}' created.")
+    print(f"Dataset repo '{dataset_repo_id}' not found. Creating...")
+    create_repo(repo_id=dataset_repo_id, repo_type="dataset", private=False)
+    print(f"Dataset repo '{dataset_repo_id}' created.")
 
+# Upload files
 for file_name in ["Xtrain.csv", "Xtest.csv", "ytrain.csv", "ytest.csv"]:
-    path = f"data/{file_name}"
+    local_path = os.path.join(DATA_DIR, file_name)
     api.upload_file(
-        path_or_fileobj=path,
-        path_in_repo=f"data/{file_name}",
-        repo_id=repo_id,
+        path_or_fileobj=local_path,
+        path_in_repo=file_name,
+        repo_id=dataset_repo_id,
         repo_type="dataset",
         token=HF_TOKEN
     )
-print("All dataset files uploaded to Hugging Face successfully.")
+print("All dataset files uploaded to Hugging Face Hub.")
