@@ -13,42 +13,49 @@ import joblib
 from huggingface_hub import HfApi, create_repo
 from huggingface_hub.utils import RepositoryNotFoundError
 import mlflow
+import os
 
+# MLflow setup
 mlflow.set_tracking_uri("http://localhost:5000")
 mlflow.set_experiment("tourism-mlops-training-experiment")
 
-api = HfApi()
+api = HfApi(token=os.getenv("HF_TOKEN"))
 
 # -----------------------------
-# Load dataset splits (replace with your HF dataset repo if different)
+# Load dataset splits (LOCAL CSVs)
 # -----------------------------
-Xtrain_path = "hf://datasets/absethi1894/MLOps/Xtrain.csv"
-Xtest_path = "hf://datasets/absethi1894/MLOps/Xtest.csv"
-ytrain_path = "hf://datasets/absethi1894/MLOps/ytrain.csv"
-ytest_path = "hf://datasets/absethi1894/MLOps/ytest.csv"
+Xtrain_path = "Xtrain.csv"
+Xtest_path = "Xtest.csv"
+ytrain_path = "ytrain.csv"
+ytest_path = "ytest.csv"
 
 Xtrain = pd.read_csv(Xtrain_path)
 Xtest = pd.read_csv(Xtest_path)
 ytrain = pd.read_csv(ytrain_path).squeeze()  # ensure Series
 ytest = pd.read_csv(ytest_path).squeeze()
 
+print("Datasets loaded successfully.")
+
 # -----------------------------
-# Feature Groups
+# Feature Groups (ensure they exist)
 # -----------------------------
-numeric_features = [
+numeric_features = [col for col in [
     'Age', 'DurationOfPitch', 'NumberOfPersonVisiting', 'NumberOfFollowups',
     'PreferredPropertyStar', 'NumberOfTrips', 'Passport', 'PitchSatisfactionScore',
     'OwnCar', 'NumberOfChildrenVisiting', 'MonthlyIncome'
-]
+] if col in Xtrain.columns]
 
-categorical_features = [
+categorical_features = [col for col in [
     'Gender', 'MaritalStatus', 'Designation', 'Occupation', 'ProductPitched'
-]
+] if col in Xtrain.columns]
 
 # -----------------------------
 # Class imbalance handling
 # -----------------------------
-class_weight = ytrain.value_counts()[0] / ytrain.value_counts()[1]
+if ytrain.nunique() == 2:
+    class_weight = ytrain.value_counts()[0] / ytrain.value_counts()[1]
+else:
+    class_weight = 1.0  # fallback if binary classification is not detected
 
 # -----------------------------
 # Preprocessing Pipeline
@@ -117,17 +124,18 @@ with mlflow.start_run():
 
     mlflow.log_metrics({
         "train_accuracy": train_report['accuracy'],
-        "train_precision": train_report['1']['precision'],
-        "train_recall": train_report['1']['recall'],
-        "train_f1-score": train_report['1']['f1-score'],
+        "train_precision": train_report['1']['precision'] if '1' in train_report else 0,
+        "train_recall": train_report['1']['recall'] if '1' in train_report else 0,
+        "train_f1-score": train_report['1']['f1-score'] if '1' in train_report else 0,
         "test_accuracy": test_report['accuracy'],
-        "test_precision": test_report['1']['precision'],
-        "test_recall": test_report['1']['recall'],
-        "test_f1-score": test_report['1']['f1-score']
+        "test_precision": test_report['1']['precision'] if '1' in test_report else 0,
+        "test_recall": test_report['1']['recall'] if '1' in test_report else 0,
+        "test_f1-score": test_report['1']['f1-score'] if '1' in test_report else 0
     })
 
     # Save the model
     model_path = "tourism_project/best_tourism_model_v1.joblib"
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     joblib.dump(best_model, model_path)
     mlflow.log_artifact(model_path, artifact_path="model")
     print(f"Model saved locally & logged to MLflow: {model_path}")
@@ -148,7 +156,8 @@ with mlflow.start_run():
 
     api.upload_file(
         path_or_fileobj=model_path,
-        path_in_repo=model_path,
+        path_in_repo=os.path.basename(model_path),
         repo_id=repo_id,
         repo_type=repo_type,
     )
+    print(f"Model uploaded to Hugging Face Hub: {repo_id}")
