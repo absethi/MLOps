@@ -3,7 +3,10 @@ name: Tourism Project Pipeline
 on:
   push:
     branches:
-      - main
+      - main  # Trigger workflow on push to main
+
+env:
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
 
@@ -12,75 +15,26 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install huggingface_hub
 
-      - name: Upload raw dataset to HF Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python - <<EOF
-          import os
-          from huggingface_hub import HfApi, create_repo
+      - name: Prepare Dataset
+        run: python model_building/prep.py
 
-          HF_TOKEN = os.environ["HF_TOKEN"]
-          api = HfApi(token=HF_TOKEN)
-
-          dataset_repo = "absethi1894/Visit_with_Us"
-          try:
-              api.repo_info(repo_id=dataset_repo, repo_type="dataset")
-              print(f"Dataset repo '{dataset_repo}' exists.")
-          except Exception:
-              create_repo(repo_id=dataset_repo, repo_type="dataset", private=False)
-              print(f"Dataset repo '{dataset_repo}' created.")
-
-          dataset_path = "data/tourism.csv"
-          if not os.path.isfile(dataset_path):
-              import urllib.request
-              os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
-              url = "https://raw.githubusercontent.com/absethi/MLOps/main/data/tourism.csv"
-              urllib.request.urlretrieve(url, dataset_path)
-
-          api.upload_file(
-              path_or_fileobj=dataset_path,
-              path_in_repo="data/tourism.csv",
-              repo_id=dataset_repo,
-              repo_type="dataset"
-          )
-          print("Raw dataset uploaded.")
-          EOF
-
-  data-prep:
+  model-training:
     needs: register-dataset
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install huggingface_hub scikit-learn pandas
-
-      - name: Run Data Preparation
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python model_building/prep.py
-
-  model-training:
-    needs: data-prep
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install mlflow xgboost scikit-learn pandas joblib huggingface_hub
+          pip install mlflow huggingface_hub xgboost scikit-learn joblib
 
       - name: Start MLflow Server
         run: |
@@ -88,6 +42,23 @@ jobs:
           sleep 5
 
       - name: Train Model
+        run: python model_building/train.py
+
+  deploy-to-hf:
+    needs: model-training
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Dependencies
+        run: python -m pip install --upgrade pip
+          
+      - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python model_building/train.py
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git add .
+          git commit -m "Update from workflow" || echo "No changes to commit"
+          git push https://huggingface:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/absethi1894/Visit_with_Us main
