@@ -4,7 +4,7 @@ import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from huggingface_hub import HfApi, create_repo, RepositoryNotFoundError
+from huggingface_hub import HfApi, create_repo
 from huggingface_hub.utils import HfHubHTTPError
 
 # -----------------------------
@@ -78,15 +78,12 @@ repo_id = "absethi1894/Visit_with_Us"
 try:
     api.repo_info(repo_id=repo_id, repo_type="dataset")
     print(f"Dataset repo '{repo_id}' already exists.")
-except RepositoryNotFoundError:
-    try:
+except HfHubHTTPError as e:
+    if e.response.status_code == 404:
         create_repo(repo_id=repo_id, repo_type="dataset", private=False)
         print(f"Dataset repo '{repo_id}' created.")
-    except HfHubHTTPError as e:
-        if "409" in str(e):
-            print(f"Dataset repo '{repo_id}' already exists.")
-        else:
-            raise e
+    else:
+        raise e
 
 # Upload each file
 for file_path in [Xtrain_path, Xtest_path, ytrain_path, ytest_path]:
