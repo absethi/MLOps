@@ -3,13 +3,9 @@ name: Tourism Project Pipeline
 on:
   push:
     branches:
-      - main  # Trigger workflow on push to main
-
-env:
-  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      - main
 
 jobs:
-
   register-dataset:
     runs-on: ubuntu-latest
     steps:
@@ -19,9 +15,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install huggingface_hub
+          pip install huggingface_hub pandas scikit-learn
 
-      - name: Prepare Dataset
+      - name: Run Data Preparation
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python model_building/prep.py
 
   model-training:
@@ -34,7 +32,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install mlflow huggingface_hub xgboost scikit-learn joblib
+          pip install mlflow xgboost huggingface_hub scikit-learn pandas joblib
 
       - name: Start MLflow Server
         run: |
@@ -42,23 +40,33 @@ jobs:
           sleep 5
 
       - name: Train Model
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python model_building/train.py
 
-  deploy-to-hf:
+  deploy-hosting:
     needs: model-training
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Dependencies
-        run: python -m pip install --upgrade pip
-          
+      - name: Install Git and Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
       - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
+
+          # Add and commit changes
           git add .
           git commit -m "Update from workflow" || echo "No changes to commit"
+
+          # Push to Hugging Face Space repo
           git push https://huggingface:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/absethi1894/Visit_with_Us main
