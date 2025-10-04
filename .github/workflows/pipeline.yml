@@ -27,20 +27,28 @@ jobs:
           from huggingface_hub import HfApi
 
           api = HfApi()
-          dataset_path = "data/tourism.csv"  # Update if different
+          repo_id = "absethi/MLOps"
+
+          # Ensure repo exists
+          try:
+              api.repo_info(repo_id=repo_id)
+          except:
+              api.create_repo(repo_id=repo_id, repo_type="model", private=False)
+
+          dataset_path = "data/tourism.csv"
 
           # Download dataset at runtime if missing
           if not os.path.isfile(dataset_path):
               import urllib.request
-              url = "https://your-dataset-url.com/tourism.csv"  # Replace
+              url = "https://your-dataset-url.com/tourism.csv"  # Replace with real URL
               os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
               urllib.request.urlretrieve(url, dataset_path)
 
           api.upload_file(
               path_or_fileobj=dataset_path,
               path_in_repo="data/tourism.csv",
-              repo_id="absethi/MLOps",
-              token="${{ secrets.HF_TOKEN }}"
+              repo_id=repo_id,
+              token=os.environ["HF_TOKEN"]
           )
           EOF
 
@@ -56,7 +64,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Data Preparation
-        run: python model_building/prep.py  # Updated path
+        run: python model_building/prep.py
 
   model-training:
     needs: data-prep
@@ -75,8 +83,8 @@ jobs:
           nohup mlflow ui --host 0.0.0.0 --port 5000 &
           sleep 5
 
-      - name: Model Building
-        run: python model_building/train.py  # Updated path
+      - name: Train Model
+        run: python model_building/train.py
 
       - name: Upload Trained Model to Hugging Face Hub
         env:
@@ -87,14 +95,22 @@ jobs:
           from huggingface_hub import HfApi
 
           api = HfApi()
-          model_file = "artifacts/tourism_xgb_model.pkl"  # Updated path
+          repo_id = "absethi/MLOps"
+
+          # Ensure repo exists
+          try:
+              api.repo_info(repo_id=repo_id)
+          except:
+              api.create_repo(repo_id=repo_id, repo_type="model", private=False)
+
+          model_file = "artifacts/tourism_xgb_model.pkl"
 
           if os.path.isfile(model_file):
               api.upload_file(
                   path_or_fileobj=model_file,
                   path_in_repo="artifacts/tourism_xgb_model.pkl",
-                  repo_id="absethi/MLOps",
-                  token="${{ secrets.HF_TOKEN }}"
+                  repo_id=repo_id,
+                  token=os.environ["HF_TOKEN"]
               )
           else:
               print(f"Model file {model_file} not found!")
