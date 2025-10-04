@@ -5,9 +5,6 @@ on:
     branches:
       - main
 
-env:
-  HF_TOKEN: ${{ secrets.HF_TOKEN }}
-
 jobs:
 
   register-dataset:
@@ -15,45 +12,45 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install huggingface_hub
 
-      - name: Upload Dataset to Hugging Face Hub
+      - name: Upload raw dataset to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           python - <<EOF
           import os
           from huggingface_hub import HfApi, create_repo
 
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          repo_id = "absethi1894/Visit_with_Us"
+          HF_TOKEN = os.environ["HF_TOKEN"]
+          api = HfApi(token=HF_TOKEN)
 
-          # Ensure repo exists
+          dataset_repo = "absethi1894/Visit_with_Us"
           try:
-              api.repo_info(repo_id=repo_id, repo_type="dataset")
-              print(f"Repo '{repo_id}' exists.")
-          except:
-              create_repo(repo_id=repo_id, repo_type="dataset", private=False)
-              print(f"Repo '{repo_id}' created.")
+              api.repo_info(repo_id=dataset_repo, repo_type="dataset")
+              print(f"Dataset repo '{dataset_repo}' exists.")
+          except Exception:
+              create_repo(repo_id=dataset_repo, repo_type="dataset", private=False)
+              print(f"Dataset repo '{dataset_repo}' created.")
 
           dataset_path = "data/tourism.csv"
-
-          # Download dataset if missing
           if not os.path.isfile(dataset_path):
               import urllib.request
-              url = "https://raw.githubusercontent.com/absethi/MLOps/main/data/tourism.csv"
               os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
+              url = "https://raw.githubusercontent.com/absethi/MLOps/main/data/tourism.csv"
               urllib.request.urlretrieve(url, dataset_path)
 
           api.upload_file(
               path_or_fileobj=dataset_path,
               path_in_repo="data/tourism.csv",
-              repo_id=repo_id,
-              repo_type="dataset",
-              token=os.environ["HF_TOKEN"]
+              repo_id=dataset_repo,
+              repo_type="dataset"
           )
+          print("Raw dataset uploaded.")
           EOF
 
   data-prep:
@@ -62,13 +59,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install huggingface_hub scikit-learn pandas
 
       - name: Run Data Preparation
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python model_building/prep.py
 
   model-training:
@@ -77,11 +76,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install mlflow xgboost scikit-learn huggingface_hub
+          pip install mlflow xgboost scikit-learn pandas joblib huggingface_hub
 
       - name: Start MLflow Server
         run: |
@@ -89,55 +88,6 @@ jobs:
           sleep 5
 
       - name: Train Model
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python model_building/train.py
-
-      - name: Upload Trained Model to Hugging Face Hub
-        run: |
-          python - <<EOF
-          import os
-          from huggingface_hub import HfApi, create_repo, RepositoryNotFoundError
-
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          repo_id = "absethi1894/churn-model"
-
-          # Ensure repo exists
-          try:
-              api.repo_info(repo_id=repo_id, repo_type="model")
-              print(f"Repo '{repo_id}' exists.")
-          except RepositoryNotFoundError:
-              create_repo(repo_id=repo_id, repo_type="model", private=False)
-              print(f"Repo '{repo_id}' created.")
-
-          model_file = "tourism_project/best_tourism_model_v1.joblib"
-
-          if os.path.isfile(model_file):
-              api.upload_file(
-                  path_or_fileobj=model_file,
-                  path_in_repo=model_file,
-                  repo_id=repo_id,
-                  repo_type="model",
-                  token=os.environ["HF_TOKEN"]
-              )
-              print(f"Model uploaded: {model_file}")
-          else:
-              print(f"Model file {model_file} not found!")
-          EOF
-
-  deploy-hosting:
-    needs: [model-training, data-prep, register-dataset]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Push files to Hugging Face Space
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git add .
-          git commit -m "Update from workflow" || echo "No changes to commit"
-          git push https://huggingface:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/absethi1894/MLOps main
