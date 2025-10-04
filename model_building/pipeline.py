@@ -1,103 +1,88 @@
 import os
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-import xgboost as xgb
+from xgboost import XGBClassifier
 import mlflow
-import pickle
 from huggingface_hub import HfApi, HfFolder
-import requests  # Correct way to catch HTTP errors
+import joblib
+import warnings
+warnings.filterwarnings("ignore")
 
-# ---------------------------
-# CONFIG
-# ---------------------------
+# -------------------
+# Paths & Repos
+# -------------------
 dataset_path = "data/tourism.csv"
-model_repo = "absethi1894/MLOps"
+model_path = "artifacts/tourism_xgb_model.pkl"
 dataset_repo = "absethi1894/Visit_with_Us"
-model_save_path = "artifacts/tourism_xgb_model.pkl"
+model_repo = "absethi1894/MLOps"
 
-# ---------------------------
-# LOAD DATA
-# ---------------------------
+# -------------------
+# Load Dataset
+# -------------------
 df = pd.read_csv(dataset_path)
-print("Dataset loaded successfully.")
-print("Columns:", df.columns.tolist())
+print(f"Dataset loaded successfully.\nColumns: {list(df.columns)}")
 
-# Target column
-target_col = "ProdTaken"
-if target_col not in df.columns:
-    target_col = df.columns[0]  # fallback
+# Select target
+target_column = "ProdTaken"
+X = df.drop(columns=[target_column])
+y = df[target_column]
 
-# ---------------------------
-# PREPROCESSING
-# ---------------------------
-X = df.drop(columns=[target_col])
-y = df[target_col]
-
-# Encode categorical columns
-categorical_cols = X.select_dtypes(include="object").columns.tolist()
-for col in categorical_cols:
-    le = LabelEncoder()
-    X[col] = le.fit_transform(X[col].astype(str))
+# Convert object columns to category for XGBoost
+for col in X.select_dtypes(include="object").columns:
+    X[col] = X[col].astype("category")
 
 # Train-test split
-if y.value_counts().min() < 2:
-    print(f"Warning: smallest class has {y.value_counts().min()} sample(s). Using simple train/test split instead of stratified CV.")
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-else:
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
-
-# ---------------------------
-# MODEL TRAINING
-# ---------------------------
-model = xgb.XGBClassifier(
-    n_estimators=100,
-    max_depth=5,
-    learning_rate=0.1,
-    use_label_encoder=False,
-    eval_metric="logloss",
-    enable_categorical=True  # enable categorical support
+X_train, X_val, y_train, y_val = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=None
 )
 
-print("Starting model training...")
-model.fit(X_train, y_train)
-print("Model training completed.")
-
-# Save model locally
-os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
-with open(model_save_path, "wb") as f:
-    pickle.dump(model, f)
-print(f"Model saved to {model_save_path}")
-
-# ---------------------------
-# LOG MODEL WITH MLFLOW
-# ---------------------------
+# -------------------
+# Model Training
+# -------------------
 mlflow.set_experiment("tourism-mlops-training-experiment")
-with mlflow.start_run():
-    mlflow.log_param("n_estimators", 100)
-    mlflow.log_param("max_depth", 5)
-    mlflow.log_param("learning_rate", 0.1)
-    mlflow.sklearn.log_model(model, "tourism_xgb_model")
+print("Starting model training...")
 
-# ---------------------------
-# HUGGING FACE HUB UPLOAD
-# ---------------------------
+model = XGBClassifier(
+    use_label_encoder=False,
+    eval_metric="logloss",
+)
+model.fit(X_train, y_train)
+
+print("Model training completed.")
+joblib.dump(model, model_path)
+print(f"Model saved to {model_path}")
+
+# -------------------
+# Hugging Face Upload
+# -------------------
 api = HfApi()
+token = HfFolder.get_token()
+
 # Model repo
 try:
-    api.repo_info(repo_id=model_repo)
+    api.repo_info(repo_id=model_repo, repo_type="model", token=token)
     print(f"Model repo '{model_repo}' exists. Uploading model...")
-except requests.exceptions.HTTPError:
+except Exception:
     print(f"Model repo '{model_repo}' not found. Creating repo...")
-    api.create_repo(repo_id=model_repo, private=False, repo_type="model")
+    api.create_repo(repo_id=model_repo, repo_type="model", private=False, token=token)
 
 # Dataset repo
 try:
-    api.repo_info(repo_id=dataset_repo)
+    api.repo_info(repo_id=dataset_repo, repo_type="dataset", token=token)
     print(f"Dataset repo '{dataset_repo}' exists. Skipping creation.")
-except requests.exceptions.HTTPError:
-    print(f"Dataset repo '{dataset_repo}' not found. Creating repo...")
-    api.create_repo(repo_id=dataset_repo, repo_type="dataset", private=False)
+except Exception as e:
+    if "409" in str(e):
+        print(f"Dataset repo '{dataset_repo}' already exists. Skipping creation.")
+    else:
+        print(f"Dataset repo '{dataset_repo}' not found. Creating repo...")
+        api.create_repo(repo_id=dataset_repo, repo_type="dataset", private=False, token=token)
 
-print("Pipeline execution completed successfully.")
+# Upload model file
+api.upload_file(
+    path_or_fileobj=model_path,
+    path_in_repo="tourism_xgb_model.pkl",
+    repo_id=model_repo,
+    repo_type="model",
+    token=token,
+)
+print(f"Model uploaded to Hugging Face model repo '{model_repo}'")
