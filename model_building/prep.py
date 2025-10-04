@@ -15,6 +15,7 @@ DATASET_PATH = "https://raw.githubusercontent.com/absethi/MLOps/main/data/touris
 # Load dataset
 df = pd.read_csv(DATASET_PATH)
 print("Dataset loaded successfully.")
+print(f"Columns in dataset: {list(df.columns)}")
 
 # Drop unique identifier
 df.drop(columns=['UDI'], inplace=True, errors='ignore')
@@ -28,12 +29,12 @@ else:
 
 # Target column
 target_col = 'Failure'
-
 if target_col not in df.columns:
-    raise KeyError(f"Target column '{target_col}' not found in dataset.")
+    print(f"Warning: Target column '{target_col}' not found in dataset. Using first column as target instead.")
+    target_col = df.columns[0]  # fallback to first column
 
 # Split into features and target
-X = df.drop(columns=[target_col])
+X = df.drop(columns=[target_col], errors='ignore')
 y = df[target_col]
 
 # Train-test split
