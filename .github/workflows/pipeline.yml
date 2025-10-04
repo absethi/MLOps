@@ -1,33 +1,33 @@
-name: Tourism Project Pipeline
+name: MLOps Pipeline CI/CD
 
 on:
   push:
     branches:
-      - main  # Trigger workflow on push to main
+      - main
+  pull_request:
 
 jobs:
-  run-pipeline:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    steps:
-      # Step 1: Checkout code
-      - uses: actions/checkout@v3
 
-      # Step 2: Set up Python
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.12
+          python-version: '3.12'
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install xgboost pandas scikit-learn mlflow huggingface_hub
 
-      # Step 4: Run the combined pipeline
-      - name: Run ML Pipeline
+      - name: Create data directory
+        run: mkdir -p data
+
+      - name: Run MLOps pipeline
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python model_building/pipeline.py
+        run: python model_building/pipeline.py
