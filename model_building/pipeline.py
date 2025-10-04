@@ -1,17 +1,21 @@
 import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder
+import xgboost as xgb
 import mlflow
 from huggingface_hub import HfApi, HfFolder
 
 # -------------------
-# Paths and repos
+# Paths & Repos
 # -------------------
-dataset_path = "data/tourism.csv"   # updated dataset name
-dataset_repo = "absethi1894/Visit_with_Us"
-model_repo = "absethi1894/MLOps"
+dataset_path = "data/tourism.csv"
 model_artifact_path = "artifacts/tourism_xgb_model.pkl"
+
+model_repo = "absethi1894/MLOps"
+dataset_repo = "absethi1894/Visit_with_Us"
+
+os.makedirs("artifacts", exist_ok=True)
 
 # -------------------
 # Load Dataset
@@ -20,52 +24,54 @@ df = pd.read_csv(dataset_path)
 print("Dataset loaded successfully.")
 print("Columns:", df.columns.tolist())
 
-# -------------------
-# Target selection
-# -------------------
-target_column = "ProdTaken"  # using ProdTaken as target
-X = df.drop(columns=[target_column, "Unnamed: 0", "CustomerID"])
-y = df[target_column]
+# Select target column
+target_col = "ProdTaken"
+X = df.drop(columns=[target_col])
+y = df[target_col]
 
-# Convert object columns to category
-for col in X.select_dtypes(include="object").columns:
+# -------------------
+# Encode categorical columns
+# -------------------
+categorical_cols = X.select_dtypes(include="object").columns.tolist()
+for col in categorical_cols:
     X[col] = X[col].astype("category")
 
-# -------------------
-# Train-test split
-# -------------------
-if y.value_counts().min() < 2:
-    # Too few samples for CV
-    print(f"Warning: smallest class has {y.value_counts().min()} sample(s). Using simple train/test split.")
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-else:
-    # Stratified split if possible
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+# Encode target if it's categorical
+if y.dtype == "object":
+    le = LabelEncoder()
+    y = le.fit_transform(y)
 
 # -------------------
-# Model Training
+# Train-Test Split
+# -------------------
+X_train, X_val, y_train, y_val = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+print(f"Train shape: {X_train.shape}, Validation shape: {X_val.shape}")
+
+# -------------------
+# Train Model
 # -------------------
 mlflow.set_experiment("tourism-mlops-training-experiment")
-print("Starting model training...")
+mlflow.start_run()
 
-model = XGBClassifier(
-    use_label_encoder=False,
-    eval_metric="logloss",
-    enable_categorical=True  # important for category columns
+model = xgb.XGBClassifier(
+    objective="multi:softprob",
+    eval_metric="mlogloss",
+    enable_categorical=True,
+    use_label_encoder=False
 )
-model.fit(X_train, y_train)
 
+print("Starting model training...")
+model.fit(X_train, y_train)
 print("Model training completed.")
 
-# -------------------
-# Save model locally
-# -------------------
-os.makedirs(os.path.dirname(model_artifact_path), exist_ok=True)
-import joblib
-joblib.dump(model, model_artifact_path)
+# Save locally
+model.save_model(model_artifact_path)
 print(f"Model saved to {model_artifact_path}")
+
+mlflow.xgboost.log_model(model, artifact_path="tourism_xgb_model")
+mlflow.end_run()
 
 # -------------------
 # Hugging Face Hub Upload
@@ -91,9 +97,7 @@ api.upload_file(
 # Upload dataset
 try:
     api.repo_info(dataset_repo)
-    print(f"Dataset repo '{dataset_repo}' exists.")
+    print(f"Dataset repo '{dataset_repo}' exists. Skipping creation.")
 except Exception:
     api.create_repo(dataset_repo, repo_type="dataset", private=False)
     print(f"Dataset repo '{dataset_repo}' created.")
-
-print("Pipeline completed successfully.")
