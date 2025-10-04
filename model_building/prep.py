@@ -20,8 +20,14 @@ print("Dataset loaded successfully.")
 df.drop(columns=['UDI'], inplace=True, errors='ignore')
 
 # Encoding the categorical 'Type' column
+from sklearn.preprocessing import LabelEncoder
+
 label_encoder = LabelEncoder()
-df['Type'] = label_encoder.fit_transform(df['Type'])
+
+if 'Type' in df.columns:
+    df['Type'] = label_encoder.fit_transform(df['Type'])
+else:
+    print("Warning: 'Type' column not found in the dataset.")
 
 target_col = 'Failure'
 
