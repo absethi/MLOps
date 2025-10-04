@@ -1,126 +1,103 @@
 import os
+import pickle
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
-import mlflow
 from huggingface_hub import HfApi
+import mlflow
 
-# ----------------------------
-# Load Dataset
-# ----------------------------
-dataset_path = "data/tourism.csv"
-if not os.path.isfile(dataset_path):
-    raise FileNotFoundError(f"Dataset not found: {dataset_path}")
+# -----------------------
+# Config
+# -----------------------
+dataset_path = "data/dataset.csv"  # Update if needed
+dataset_repo = "absethi1894/Visit_with_Us"
+model_repo = "absethi1894/MLOps"
+model_local_path = "artifacts/tourism_xgb_model.pkl"
+target_column = "ProdTaken"  # Default target
 
+os.makedirs("data", exist_ok=True)
+os.makedirs("artifacts", exist_ok=True)
+
+# -----------------------
+# Load dataset
+# -----------------------
 df = pd.read_csv(dataset_path)
 print("Dataset loaded successfully.")
 print("Columns:", df.columns.tolist())
 
-# ----------------------------
-# Target column
-# ----------------------------
-target_col = "Failure" if "Failure" in df.columns else "ProdTaken"
-print(f"Target column '{target_col}' selected.")
+if target_column not in df.columns:
+    print(f"Warning: Target column '{target_column}' not found. Using first column instead.")
+    target_column = df.columns[0]
 
-X = df.drop(columns=[target_col])
-y = df[target_col]
+X = df.drop(columns=[target_column])
+y = df[target_column]
 
-# ----------------------------
-# Handle categorical features
-# ----------------------------
-categorical_cols = ["TypeofContact", "Occupation", "Gender", "ProductPitched", 
-                    "MaritalStatus", "Designation"]
-
+# -----------------------
+# Handle categorical columns
+# -----------------------
+categorical_cols = X.select_dtypes(include="object").columns.tolist()
 for col in categorical_cols:
-    if col in X.columns:
-        X[col] = X[col].astype("category")
+    X[col] = X[col].astype("category")
 
-# ----------------------------
+# -----------------------
 # Train-test split
-# ----------------------------
+# -----------------------
 if y.value_counts().min() < 2:
     print(f"Warning: smallest class has {y.value_counts().min()} sample(s). Using simple train/test split.")
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 else:
     from sklearn.model_selection import StratifiedKFold
     cv_folds = min(3, y.value_counts().min())
-    if cv_folds < 2:
-        print("Not enough samples for stratified CV, using train_test_split instead.")
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-    else:
-        cv_strategy = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-        # fallback to simple split for now
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+    skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+    train_idx, val_idx = next(skf.split(X, y))
+    X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+    y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
 
-# ----------------------------
-# Train XGBoost Model
-# ----------------------------
-print("Starting model training...")
+# -----------------------
+# Train XGBoost model
+# -----------------------
 model = XGBClassifier(
-    n_estimators=100,
-    learning_rate=0.1,
-    max_depth=3,
     use_label_encoder=False,
-    eval_metric='logloss',
-    enable_categorical=True  # important for categorical columns
+    eval_metric="logloss",
+    enable_categorical=True
 )
+print("Starting model training...")
 model.fit(X_train, y_train)
 print("Model training completed.")
 
-# ----------------------------
-# Save Model
-# ----------------------------
-os.makedirs("artifacts", exist_ok=True)
-model_file = "artifacts/tourism_xgb_model.pkl"
-import joblib
-joblib.dump(model, model_file)
-print(f"Model saved to {model_file}")
+# -----------------------
+# Save model locally
+# -----------------------
+pickle.dump(model, open(model_local_path, "wb"))
+print(f"Model saved to {model_local_path}")
 
-# ----------------------------
-# MLflow Tracking
-# ----------------------------
-mlflow.set_experiment("tourism-mlops-training-experiment")
-with mlflow.start_run():
-    mlflow.log_param("n_estimators", 100)
-    mlflow.log_param("max_depth", 3)
-    mlflow.log_param("learning_rate", 0.1)
-    mlflow.sklearn.log_model(model, "xgb_model")
-
-# ----------------------------
-# Upload Dataset & Model to Hugging Face Hub
-# ----------------------------
-hf_token = os.environ.get("HF_TOKEN")
-if not hf_token:
-    raise ValueError("HF_TOKEN environment variable not set.")
-
+# -----------------------
+# Upload dataset to HF
+# -----------------------
 api = HfApi()
-dataset_repo = "absethi1894/Visit_with_Us"
-model_repo = "absethi1894/MLOps"
-
-# Dataset upload
 try:
-    api.repo_info(repo_id=dataset_repo)
-except:
+    api.repo_info(repo_id=dataset_repo, repo_type="dataset")
+    print(f"Dataset repo '{dataset_repo}' already exists.")
+except Exception:
     api.create_repo(repo_id=dataset_repo, repo_type="dataset", private=False)
+    print(f"Created dataset repo '{dataset_repo}'.")
 
-api.upload_file(
-    path_or_fileobj=dataset_path,
-    path_in_repo="data/tourism.csv",
-    repo_id=dataset_repo,
-    token=hf_token
-)
-
-# Model upload
+# -----------------------
+# Upload model to HF
+# -----------------------
 try:
-    api.repo_info(repo_id=model_repo)
-except:
+    api.repo_info(repo_id=model_repo, repo_type="model")
+    print(f"Model repo '{model_repo}' already exists.")
+except Exception:
     api.create_repo(repo_id=model_repo, repo_type="model", private=False)
+    print(f"Created model repo '{model_repo}'.")
 
 api.upload_file(
-    path_or_fileobj=model_file,
-    path_in_repo="artifacts/tourism_xgb_model.pkl",
+    path_or_fileobj=model_local_path,
+    path_in_repo=os.path.basename(model_local_path),
     repo_id=model_repo,
-    token=hf_token
+    repo_type="model"
 )
-
-print("Dataset and model uploaded to Hugging Face Hub successfully.")
+print(f"Model uploaded to HF model repo '{model_repo}'.")
