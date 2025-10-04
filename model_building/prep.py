@@ -1,49 +1,52 @@
-# -----------------------------
-# prep.py
-# -----------------------------
+# model_building/prep.py
 
-# for data manipulation
-import pandas as pd
 import os
-# for data preprocessing
+import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-# for hugging face space authentication to upload files
 from huggingface_hub import HfApi, create_repo
 from huggingface_hub.utils import RepositoryNotFoundError
 
 # -----------------------------
-# Constants
+# Check HF_TOKEN
 # -----------------------------
-HF_TOKEN = os.getenv("HF_TOKEN")
-if HF_TOKEN is None:
+hf_token = os.getenv("HF_TOKEN")
+if not hf_token:
     raise ValueError("HF_TOKEN environment variable not set. Please set it before running.")
 
-api = HfApi(token=HF_TOKEN)
-
-DATASET_PATH = "https://raw.githubusercontent.com/absethi/MLOps/main/data/tourism.csv"
+api = HfApi(token=hf_token)
 
 # -----------------------------
-# Load Dataset
+# Dataset path
 # -----------------------------
+DATASET_PATH = "data/tourism.csv"
+
+# Download dataset if missing
+if not os.path.isfile(DATASET_PATH):
+    import urllib.request
+    os.makedirs(os.path.dirname(DATASET_PATH), exist_ok=True)
+    url = "https://raw.githubusercontent.com/absethi/MLOps/main/data/tourism.csv"
+    urllib.request.urlretrieve(url, DATASET_PATH)
+
+# Load dataset
 df = pd.read_csv(DATASET_PATH)
 print("Dataset loaded successfully.")
-print(f"Columns in dataset: {list(df.columns)}")
+print("Columns in dataset:", df.columns.tolist())
 
-# Drop unique identifier if exists
+# Drop unique identifier
 df.drop(columns=['UDI'], inplace=True, errors='ignore')
 
-# Encode 'Type' column if exists
+# Encode categorical 'Type' column if exists
 label_encoder = LabelEncoder()
 if 'Type' in df.columns:
     df['Type'] = label_encoder.fit_transform(df['Type'])
 else:
-    print("Warning: 'Type' column not found in the dataset.")
+    print("Warning: 'Type' column not found in dataset.")
 
-# Set target column
+# Target column
 target_col = 'Failure'
 if target_col not in df.columns:
-    print(f"Warning: Target column '{target_col}' not found in dataset. Using first column as target instead.")
+    print(f"Warning: Target column '{target_col}' not found. Using first column as target.")
     target_col = df.columns[0]
 
 # Split features and target
@@ -53,35 +56,27 @@ y = df[target_col]
 # Train-test split
 Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Save splits locally
+# Save splits
 Xtrain.to_csv("Xtrain.csv", index=False)
 Xtest.to_csv("Xtest.csv", index=False)
 ytrain.to_csv("ytrain.csv", index=False)
 ytest.to_csv("ytest.csv", index=False)
 print("Train-test splits saved locally.")
 
-# -----------------------------
-# Hugging Face Dataset Upload
-# -----------------------------
+# Upload splits to Hugging Face Hub
 repo_id = "absethi1894/Visit_with_Us"
-repo_type = "dataset"
-
-# Ensure repo exists
 try:
-    api.repo_info(repo_id=repo_id, repo_type=repo_type)
-    print(f"Repo '{repo_id}' already exists.")
+    api.repo_info(repo_id=repo_id)
 except RepositoryNotFoundError:
-    print(f"Repo '{repo_id}' not found. Creating...")
-    create_repo(repo_id=repo_id, repo_type=repo_type, private=False)
+    create_repo(repo_id=repo_id, repo_type="dataset", private=False)
     print(f"Repo '{repo_id}' created.")
 
-# Upload files
 files = ["Xtrain.csv", "Xtest.csv", "ytrain.csv", "ytest.csv"]
 for file_path in files:
     api.upload_file(
         path_or_fileobj=file_path,
-        path_in_repo=file_path.split("/")[-1],  # just the filename
+        path_in_repo=file_path,
         repo_id=repo_id,
-        repo_type=repo_type,
+        token=hf_token
     )
-    print(f"Uploaded {file_path} to Hugging Face dataset repo '{repo_id}'.")
+print("Train-test splits uploaded to Hugging Face Hub.")
