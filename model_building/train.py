@@ -14,33 +14,25 @@ model_file = "artifacts/tourism_xgb_model.pkl"
 os.makedirs("artifacts", exist_ok=True)
 
 # Load data
-if not os.path.exists(Xtrain_path) or not os.path.exists(ytrain_path):
-    raise FileNotFoundError(f"Missing training data: {Xtrain_path} or {ytrain_path}")
-
 Xtrain = pd.read_csv(Xtrain_path)
-ytrain = pd.read_csv(ytrain_path).squeeze()  # convert to Series if single column
+ytrain = pd.read_csv(ytrain_path).squeeze()
 
-# Determine CV strategy based on smallest class size
+# Check class sizes
 min_class_size = ytrain.value_counts().min()
+
 if min_class_size < 2:
-    print(f"Warning: smallest class has {min_class_size} sample(s). Using simple train/test split instead of CV.")
-    X_train, X_val, y_train, y_val = train_test_split(
-        Xtrain, ytrain, test_size=0.2, stratify=ytrain, random_state=42
-    )
+    print(f"Warning: smallest class has {min_class_size} sample(s). Training on full data without stratification or CV.")
+    X_train, y_train = Xtrain, ytrain
     use_cv = False
 else:
     cv_folds = min(3, min_class_size)
-    print(f"Using {cv_folds}-fold Stratified CV (smallest class has {min_class_size} samples)")
+    print(f"Using {cv_folds}-fold Stratified CV")
     cv_strategy = StratifiedKFold(n_splits=cv_folds)
     use_cv = True
 
 # Define model and hyperparameters
 model = XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42)
-param_grid = {
-    "max_depth": [3, 5],
-    "n_estimators": [50, 100],
-    "learning_rate": [0.05, 0.1]
-}
+param_grid = {"max_depth": [3, 5], "n_estimators": [50, 100], "learning_rate": [0.05, 0.1]}
 
 # MLflow experiment
 mlflow.set_experiment("tourism-mlops-training-experiment")
