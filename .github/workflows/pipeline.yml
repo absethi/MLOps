@@ -3,7 +3,10 @@ name: Tourism Project Pipeline
 on:
   push:
     branches:
-      - main  # Trigger workflow on push to main
+      - main
+
+env:
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
 
@@ -19,25 +22,21 @@ jobs:
           pip install huggingface_hub
 
       - name: Upload Dataset to Hugging Face Hub
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           python - <<EOF
           import os
-          from huggingface_hub import HfApi
+          from huggingface_hub import HfApi, create_repo
 
-          hf_token = os.getenv("HF_TOKEN")
-          if not hf_token:
-              raise ValueError("HF_TOKEN environment variable not set!")
-
-          api = HfApi(token=hf_token)
+          api = HfApi(token=os.environ["HF_TOKEN"])
           repo_id = "absethi1894/Visit_with_Us"
 
           # Ensure repo exists
           try:
-              api.repo_info(repo_id=repo_id)
+              api.repo_info(repo_id=repo_id, repo_type="dataset")
+              print(f"Repo '{repo_id}' exists.")
           except:
-              api.create_repo(repo_id=repo_id, repo_type="dataset", private=False)
+              create_repo(repo_id=repo_id, repo_type="dataset", private=False)
+              print(f"Repo '{repo_id}' created.")
 
           dataset_path = "data/tourism.csv"
 
@@ -52,7 +51,8 @@ jobs:
               path_or_fileobj=dataset_path,
               path_in_repo="data/tourism.csv",
               repo_id=repo_id,
-              token=hf_token
+              repo_type="dataset",
+              token=os.environ["HF_TOKEN"]
           )
           EOF
 
@@ -69,8 +69,6 @@ jobs:
           pip install huggingface_hub scikit-learn pandas
 
       - name: Run Data Preparation
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python model_building/prep.py
 
   model-training:
@@ -83,7 +81,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install mlflow xgboost huggingface_hub scikit-learn pandas joblib
+          pip install mlflow xgboost scikit-learn huggingface_hub
 
       - name: Start MLflow Server
         run: |
@@ -91,9 +89,39 @@ jobs:
           sleep 5
 
       - name: Train Model
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python model_building/train.py
+
+      - name: Upload Trained Model to Hugging Face Hub
+        run: |
+          python - <<EOF
+          import os
+          from huggingface_hub import HfApi, create_repo, RepositoryNotFoundError
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo_id = "absethi1894/churn-model"
+
+          # Ensure repo exists
+          try:
+              api.repo_info(repo_id=repo_id, repo_type="model")
+              print(f"Repo '{repo_id}' exists.")
+          except RepositoryNotFoundError:
+              create_repo(repo_id=repo_id, repo_type="model", private=False)
+              print(f"Repo '{repo_id}' created.")
+
+          model_file = "tourism_project/best_tourism_model_v1.joblib"
+
+          if os.path.isfile(model_file):
+              api.upload_file(
+                  path_or_fileobj=model_file,
+                  path_in_repo=model_file,
+                  repo_id=repo_id,
+                  repo_type="model",
+                  token=os.environ["HF_TOKEN"]
+              )
+              print(f"Model uploaded: {model_file}")
+          else:
+              print(f"Model file {model_file} not found!")
+          EOF
 
   deploy-hosting:
     needs: [model-training, data-prep, register-dataset]
@@ -105,14 +133,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install huggingface_hub
 
       - name: Push files to Hugging Face Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           git add .
           git commit -m "Update from workflow" || echo "No changes to commit"
-          git push https://huggingface:${{ HF_TOKEN }}@huggingface.co/spaces/absethi1894/MLOps main
+          git push https://huggingface:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/absethi1894/MLOps main
