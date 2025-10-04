@@ -22,10 +22,10 @@ api = HfApi()
 # -----------------------------
 # Load dataset splits (replace with your HF dataset repo if different)
 # -----------------------------
-Xtrain_path = "hf://datasets/absethi1894/Visit_with_Us/Xtrain.csv"
-Xtest_path = "hf://datasets/absethi1894/Visit_with_Usn/Xtest.csv"
-ytrain_path = "hf://datasets/absethi1894/Visit_with_Us/ytrain.csv"
-ytest_path = "hf://datasets/absethi1894/Visit_with_Us/ytest.csv"
+Xtrain_path = "hf://datasets/absethi1894/MLOps/Xtrain.csv"
+Xtest_path = "hf://datasets/absethi1894/MLOps/Xtest.csv"
+ytrain_path = "hf://datasets/absethi1894/MLOps/ytrain.csv"
+ytest_path = "hf://datasets/absethi1894/MLOps/ytest.csv"
 
 Xtrain = pd.read_csv(Xtrain_path)
 Xtest = pd.read_csv(Xtest_path)
