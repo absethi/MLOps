@@ -27,8 +27,8 @@ jobs:
           api = HfApi()
           # Replace 'data.csv' with your dataset file
           api.upload_file(
-              path_or_fileobj="data.csv",
-              path_in_repo="data/data.csv",
+              path_or_fileobj="tourism.csv",
+              path_in_repo="data/tourism.csv",
               repo_id="absethi/MLOps",
               token="${{ secrets.HF_TOKEN }}"
           )
