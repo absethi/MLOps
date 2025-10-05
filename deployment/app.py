@@ -1,54 +1,98 @@
 import streamlit as st
 import pandas as pd
-import xgboost as xgb
+from huggingface_hub import hf_hub_download
+import joblib
 import os
 
 # -----------------------------
-# Load Model
+# Load the trained tourism model
 # -----------------------------
-MODEL_PATH = "tourism_xgb_model.pkl"
-model = None
+MODEL_REPO = "absethi1894/MLOps"
+MODEL_FILE = "tourism_xgb_model.pkl"
 
-if os.path.exists(MODEL_PATH):
-    model = xgb.XGBClassifier()
-    model.load_model(MODEL_PATH)
-else:
-    st.error(f"❌ Model file not found at {MODEL_PATH}. Please upload it to your Space.")
+# Download the model from Hugging Face Hub
+try:
+    model_path = hf_hub_download(
+        repo_id=MODEL_REPO,
+        filename=MODEL_FILE
+    )
+except Exception as e:
+    st.error(f"Error loading model: {e}")
+    st.stop()
 
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-st.title("Tourism Package Purchase Prediction 🧳")
-st.write("Fill in the details below to predict whether a customer will purchase a package.")
-
-age = st.number_input("Age", min_value=18, max_value=100, value=30)
-duration = st.number_input("Duration of Stay (days)", min_value=1, max_value=30, value=5)
-monthly_income = st.number_input("Monthly Income", min_value=1000, max_value=100000, value=50000)
-num_person_visiting = st.slider("Number of People Visiting", min_value=1, max_value=10, value=2)
-designations = st.selectbox("Designation", ["Executive", "Manager", "Senior Manager", "AVP", "VP"])
-gender = st.radio("Gender", ["Male", "Female"])
+model = joblib.load(model_path)
 
 # -----------------------------
-# Prepare input
+# Streamlit App UI
 # -----------------------------
-input_dict = {
-    "Age": age,
-    "DurationOfPitch": duration,
-    "MonthlyIncome": monthly_income,
-    "NumberOfPersonVisiting": num_person_visiting,
-    "Designation": designations,
-    "Gender": gender,
-}
-input_data = pd.DataFrame([input_dict])
+st.title("Tourism Product Purchase Prediction")
+st.write("""
+This application predicts the likelihood of a customer purchasing the tourism package
+based on their profile and travel-related information.
+Please provide the details below:
+""")
+
+# -----------------------------
+# User Inputs
+# -----------------------------
+gender = st.selectbox("Gender", ["Male", "Female"])
+marital_status = st.selectbox("Marital Status", ["Married", "Single", "Divorced"])
+age = st.number_input("Age", min_value=18, max_value=80, value=30)
+designation = st.selectbox("Designation", ["Executive", "Manager", "Senior Manager", "AVP", "VP"])
+occupation = st.selectbox("Occupation", ["Salaried", "Small Business", "Large Business", "Free Lancer"])
+monthly_income = st.number_input("Monthly Income (INR)", min_value=10000, max_value=500000, value=50000, step=1000)
+
+num_trips = st.number_input("Number of Trips", min_value=0, max_value=50, value=1)
+num_person_visiting = st.number_input("Number of Persons Visiting", min_value=1, max_value=10, value=2)
+num_children = st.number_input("Number of Children Visiting", min_value=0, max_value=5, value=0)
+
+passport = st.selectbox("Passport", [0, 1])
+own_car = st.selectbox("Own Car", [0, 1])
+
+duration_of_pitch = st.number_input("Duration of Pitch (minutes)", min_value=0, max_value=100, value=15)
+num_followups = st.number_input("Number of Followups", min_value=0, max_value=10, value=1)
+preferred_star = st.selectbox("Preferred Property Star", [3, 4, 5])
+product_pitched = st.selectbox("Product Pitched", ["Basic", "Deluxe", "Standard", "Super Deluxe", "King"])
+pitch_score = st.number_input("Pitch Satisfaction Score", min_value=1, max_value=5, value=3)
+
+# -----------------------------
+# Create DataFrame for prediction
+# -----------------------------
+input_data = pd.DataFrame([{
+    'Gender': gender,
+    'MaritalStatus': marital_status,
+    'Age': age,
+    'Designation': designation,
+    'Occupation': occupation,
+    'MonthlyIncome': monthly_income,
+    'NumberOfTrips': num_trips,
+    'NumberOfPersonVisiting': num_person_visiting,
+    'NumberOfChildrenVisiting': num_children,
+    'Passport': passport,
+    'OwnCar': own_car,
+    'DurationOfPitch': duration_of_pitch,
+    'NumberOfFollowups': num_followups,
+    'PreferredPropertyStar': preferred_star,
+    'ProductPitched': product_pitched,
+    'PitchSatisfactionScore': pitch_score
+}])
+
+# Convert categorical columns to 'category' dtype for XGBoost
+categorical_cols = [
+    'Gender', 'MaritalStatus', 'Designation', 'Occupation',
+    'ProductPitched', 'PreferredPropertyStar'
+]
+for col in categorical_cols:
+    input_data[col] = input_data[col].astype('category')
 
 # -----------------------------
 # Prediction
 # -----------------------------
 if st.button("Predict Purchase"):
-    if model is None:
-        st.error("⚠️ Prediction unavailable — model not loaded.")
-    else:
+    try:
         prediction = model.predict(input_data)[0]
         result = "Will Purchase Package ✅" if prediction == 1 else "Will Not Purchase Package ❌"
         st.subheader("Prediction Result:")
         st.success(f"The model predicts: **{result}**")
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
