@@ -2,13 +2,15 @@ import streamlit as st
 import pandas as pd
 from huggingface_hub import hf_hub_download
 import joblib
+import os
 
 # -----------------------------
 # Load the trained tourism model
 # -----------------------------
 model_path = hf_hub_download(
-    repo_id="absethi1894/churn-model",
-    filename="best_tourism_model_v1.joblib"
+    repo_id="absethi1894/MLOps",                 # 👈 consistent with pipeline
+    filename="best_tourism_model_v1.joblib",     # 👈 consistent name
+    token=os.getenv("HF_TOKEN")                  # if private repo
 )
 model = joblib.load(model_path)
 
@@ -72,6 +74,4 @@ input_data = pd.DataFrame([{
 # -----------------------------
 if st.button("Predict Purchase"):
     prediction = model.predict(input_data)[0]
-    result = "Will Purchase Package ✅" if prediction == 1 else "Will Not Purchase Package ❌"
-    st.subheader("Prediction Result:")
-    st.success(f"The model predicts: **{result}**")
+    result = "Will Purchase Pack
