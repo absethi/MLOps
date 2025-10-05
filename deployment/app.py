@@ -2,24 +2,14 @@ import streamlit as st
 import pandas as pd
 from huggingface_hub import hf_hub_download
 import joblib
-import os
 
 # -----------------------------
 # Load the trained tourism model
 # -----------------------------
-MODEL_REPO = "absethi1894/MLOps"
-MODEL_FILE = "tourism_xgb_model.pkl"
-
-# Download the model from Hugging Face Hub
-try:
-    model_path = hf_hub_download(
-        repo_id=MODEL_REPO,
-        filename=MODEL_FILE
-    )
-except Exception as e:
-    st.error(f"Error loading model: {e}")
-    st.stop()
-
+model_path = hf_hub_download(
+    repo_id="absethi1894/churn-model",
+    filename="best_tourism_model_v1.joblib"
+)
 model = joblib.load(model_path)
 
 # -----------------------------
@@ -41,14 +31,11 @@ age = st.number_input("Age", min_value=18, max_value=80, value=30)
 designation = st.selectbox("Designation", ["Executive", "Manager", "Senior Manager", "AVP", "VP"])
 occupation = st.selectbox("Occupation", ["Salaried", "Small Business", "Large Business", "Free Lancer"])
 monthly_income = st.number_input("Monthly Income (INR)", min_value=10000, max_value=500000, value=50000, step=1000)
-
 num_trips = st.number_input("Number of Trips", min_value=0, max_value=50, value=1)
 num_person_visiting = st.number_input("Number of Persons Visiting", min_value=1, max_value=10, value=2)
 num_children = st.number_input("Number of Children Visiting", min_value=0, max_value=5, value=0)
-
 passport = st.selectbox("Passport", [0, 1])
 own_car = st.selectbox("Own Car", [0, 1])
-
 duration_of_pitch = st.number_input("Duration of Pitch (minutes)", min_value=0, max_value=100, value=15)
 num_followups = st.number_input("Number of Followups", min_value=0, max_value=10, value=1)
 preferred_star = st.selectbox("Preferred Property Star", [3, 4, 5])
@@ -77,22 +64,15 @@ input_data = pd.DataFrame([{
     'PitchSatisfactionScore': pitch_score
 }])
 
-# Convert categorical columns to 'category' dtype for XGBoost
-categorical_cols = [
-    'Gender', 'MaritalStatus', 'Designation', 'Occupation',
-    'ProductPitched', 'PreferredPropertyStar'
-]
-for col in categorical_cols:
+# Convert categorical columns to 'category' for XGBoost
+for col in ['Gender', 'MaritalStatus', 'Designation', 'Occupation', 'ProductPitched']:
     input_data[col] = input_data[col].astype('category')
 
 # -----------------------------
 # Prediction
 # -----------------------------
 if st.button("Predict Purchase"):
-    try:
-        prediction = model.predict(input_data)[0]
-        result = "Will Purchase Package ✅" if prediction == 1 else "Will Not Purchase Package ❌"
-        st.subheader("Prediction Result:")
-        st.success(f"The model predicts: **{result}**")
-    except Exception as e:
-        st.error(f"Error during prediction: {e}")
+    prediction = model.predict(input_data)[0]
+    result = "Will Purchase Package ✅" if prediction == 1 else "Will Not Purchase Package ❌"
+    st.subheader("Prediction Result:")
+    st.success(f"The model predicts: **{result}**")
