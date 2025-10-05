@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import xgboost as xgb
+import joblib
 from huggingface_hub import HfApi, HfFolder
 
 # ----------------------------
@@ -11,46 +12,45 @@ from huggingface_hub import HfApi, HfFolder
 # ----------------------------
 dataset_path = "data/tourism.csv"
 dataset_repo = "absethi1894/Visit_with_Us"
-model_repo = "absethi1894/MLOps"
-space_repo = "absethi1894/Visit_with_Us"   # same repo where app.py runs
-model_artifact_path = "tourism_xgb_model.pkl"
+model_repo = "absethi1894/churn-model"
+model_artifact_path = "artifacts/best_tourism_model_v1.joblib"
 
 # ----------------------------
 # Load Dataset
 # ----------------------------
 df = pd.read_csv(dataset_path)
-print("✅ Dataset loaded successfully")
+print("Dataset loaded successfully.")
 print("Columns:", df.columns.tolist())
 
 # ----------------------------
-# Target and Features
+# Select target and features
 # ----------------------------
 target_col = "ProdTaken"
 y = df[target_col]
-X = df.drop(columns=[target_col, "CustomerID", "Unnamed: 0"], errors="ignore")
+X = df.drop(columns=[target_col, "CustomerID", "Unnamed: 0"])
 
-# Encode categorical features
+# Convert object columns to categorical
 for col in X.select_dtypes(include="object").columns:
     X[col] = X[col].astype("category")
 
-# Encode target
+# Encode target if categorical
 if y.dtype == "object":
     le = LabelEncoder()
     y = le.fit_transform(y)
 
 num_classes = len(np.unique(y))
-print(f"✅ Target '{target_col}' has {num_classes} unique classes")
+print(f"Detected {num_classes} unique classes in target '{target_col}'.")
 
 # ----------------------------
 # Train-Test Split
 # ----------------------------
 X_train, X_val, y_train, y_val = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
+    X, y, test_size=0.2, random_state=42, stratify=y if num_classes > 1 else None
 )
-print(f"✅ Train shape: {X_train.shape}, Validation shape: {X_val.shape}")
+print(f"Train shape: {X_train.shape}, Validation shape: {X_val.shape}")
 
 # ----------------------------
-# Train Model
+# Train XGBoost Model
 # ----------------------------
 model = xgb.XGBClassifier(
     objective="multi:softprob" if num_classes > 2 else "binary:logistic",
@@ -60,18 +60,19 @@ model = xgb.XGBClassifier(
     num_class=num_classes if num_classes > 2 else None
 )
 
-print("🚀 Training model...")
+print("Starting model training...")
 model.fit(X_train, y_train)
-print("✅ Model training completed")
+print("Model training completed.")
 
 # ----------------------------
-# Save Model
+# Save Model using joblib
 # ----------------------------
-model.save_model(model_artifact_path)
-print(f"✅ Model saved as {model_artifact_path}")
+os.makedirs(os.path.dirname(model_artifact_path), exist_ok=True)
+joblib.dump(model, model_artifact_path)
+print(f"Model saved to {model_artifact_path}")
 
 # ----------------------------
-# Upload to Hugging Face
+# Upload Model to Hugging Face Hub
 # ----------------------------
 api = HfApi()
 hf_token = HfFolder.get_token()
@@ -80,24 +81,14 @@ hf_token = HfFolder.get_token()
 try:
     api.repo_info(model_repo, repo_type="model")
 except:
-    api.create_repo(model_repo, repo_type="model", private=False, token=hf_token)
+    api.create_repo(model_repo, repo_type="model", private=False)
 
-# Upload to model repo
+# Upload model file
 api.upload_file(
     path_or_fileobj=model_artifact_path,
-    path_in_repo=model_artifact_path,
+    path_in_repo=os.path.basename(model_artifact_path),
     repo_id=model_repo,
     repo_type="model",
     token=hf_token,
 )
-print(f"✅ Model uploaded to model repo: {model_repo}")
-
-# Also upload to Space repo (so app.py can load it locally)
-api.upload_file(
-    path_or_fileobj=model_artifact_path,
-    path_in_repo=model_artifact_path,
-    repo_id=space_repo,
-    repo_type="space",
-    token=hf_token,
-)
-print(f"✅ Model uploaded to Space repo: {space_repo}")
+print(f"Model uploaded to Hugging Face repo '{model_repo}'")
