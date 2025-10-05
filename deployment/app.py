@@ -7,7 +7,7 @@ import joblib
 # Load the trained tourism model
 # -----------------------------
 model_path = hf_hub_download(
-    repo_id="absethi1894/churn-model",
+    repo_id="absethi1894/churn-model",  # Your HF model repo
     filename="best_tourism_model_v1.joblib"
 )
 model = joblib.load(model_path)
@@ -31,42 +31,68 @@ age = st.number_input("Age", min_value=18, max_value=80, value=30)
 designation = st.selectbox("Designation", ["Executive", "Manager", "Senior Manager", "AVP", "VP"])
 occupation = st.selectbox("Occupation", ["Salaried", "Small Business", "Large Business", "Free Lancer"])
 monthly_income = st.number_input("Monthly Income (INR)", min_value=10000, max_value=500000, value=50000, step=1000)
+
 num_trips = st.number_input("Number of Trips", min_value=0, max_value=50, value=1)
 num_person_visiting = st.number_input("Number of Persons Visiting", min_value=1, max_value=10, value=2)
 num_children = st.number_input("Number of Children Visiting", min_value=0, max_value=5, value=0)
+
 passport = st.selectbox("Passport", [0, 1])
 own_car = st.selectbox("Own Car", [0, 1])
+
 duration_of_pitch = st.number_input("Duration of Pitch (minutes)", min_value=0, max_value=100, value=15)
 num_followups = st.number_input("Number of Followups", min_value=0, max_value=10, value=1)
 preferred_star = st.selectbox("Preferred Property Star", [3, 4, 5])
 product_pitched = st.selectbox("Product Pitched", ["Basic", "Deluxe", "Standard", "Super Deluxe", "King"])
-pitch_score = st.number_input("Pitch Satisfaction Score", min_value=1, max_value=5, value=3)
+
+# -----------------------------
+# Default values for missing features
+# -----------------------------
+default_values = {
+    "TypeofContact": "Self Enquiry",  # replace with the most common value from training
+    "CityTier": 2                      # replace with default numeric value from training
+}
 
 # -----------------------------
 # Create DataFrame for prediction
 # -----------------------------
 input_data = pd.DataFrame([{
-    'Gender': gender,
-    'MaritalStatus': marital_status,
     'Age': age,
-    'Designation': designation,
-    'Occupation': occupation,
-    'MonthlyIncome': monthly_income,
-    'NumberOfTrips': num_trips,
-    'NumberOfPersonVisiting': num_person_visiting,
-    'NumberOfChildrenVisiting': num_children,
-    'Passport': passport,
-    'OwnCar': own_car,
+    'TypeofContact': default_values["TypeofContact"],
+    'CityTier': default_values["CityTier"],
     'DurationOfPitch': duration_of_pitch,
+    'Occupation': occupation,
+    'Gender': gender,
+    'NumberOfPersonVisiting': num_person_visiting,
     'NumberOfFollowups': num_followups,
-    'PreferredPropertyStar': preferred_star,
     'ProductPitched': product_pitched,
-    'PitchSatisfactionScore': pitch_score
+    'PreferredPropertyStar': preferred_star,
+    'MaritalStatus': marital_status,
+    'NumberOfTrips': num_trips,
+    'Passport': passport,
+    'PitchSatisfactionScore': 3,  # or collect input
+    'OwnCar': own_car,
+    'NumberOfChildrenVisiting': num_children,
+    'Designation': designation,
+    'MonthlyIncome': monthly_income
 }])
 
-# Convert categorical columns to 'category' for XGBoost
-for col in ['Gender', 'MaritalStatus', 'Designation', 'Occupation', 'ProductPitched']:
+# -----------------------------
+# Convert categorical columns to category type
+# -----------------------------
+categorical_cols = ['Gender', 'MaritalStatus', 'Designation', 'Occupation', 
+                    'ProductPitched', 'TypeofContact']
+for col in categorical_cols:
     input_data[col] = input_data[col].astype('category')
+
+# -----------------------------
+# Reorder columns to match training
+# -----------------------------
+feature_order = ['Age', 'TypeofContact', 'CityTier', 'DurationOfPitch', 'Occupation', 
+                 'Gender', 'NumberOfPersonVisiting', 'NumberOfFollowups', 'ProductPitched', 
+                 'PreferredPropertyStar', 'MaritalStatus', 'NumberOfTrips', 'Passport', 
+                 'PitchSatisfactionScore', 'OwnCar', 'NumberOfChildrenVisiting', 
+                 'Designation', 'MonthlyIncome']
+input_data = input_data[feature_order]
 
 # -----------------------------
 # Prediction
