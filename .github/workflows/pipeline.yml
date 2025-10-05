@@ -31,3 +31,24 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python model_building/pipeline.py
+
+  deploy-hosting:
+    runs-on: ubuntu-latest
+    needs: [build-and-deploy]   # depends on training job finishing
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r mlops/requirements.txt
+
+      - name: Push files to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python mlops/hosting/hosting.py
