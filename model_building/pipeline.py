@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import xgboost as xgb
 import mlflow
+import joblib
 from huggingface_hub import HfApi, HfFolder
 
 # ----------------------------
@@ -13,7 +14,7 @@ from huggingface_hub import HfApi, HfFolder
 dataset_path = "data/tourism.csv"
 dataset_repo = "absethi1894/Visit_with_Us"
 model_repo = "absethi1894/MLOps"
-model_artifact_path = "artifacts/tourism_xgb_model.pkl"
+model_artifact_path = "artifacts/best_tourism_model_v1.joblib"   # 👈 updated name
 
 # ----------------------------
 # Load Dataset
@@ -65,10 +66,10 @@ model.fit(X_train, y_train)
 print("Model training completed.")
 
 # ----------------------------
-# Save Model
+# Save Model (Joblib format)
 # ----------------------------
 os.makedirs(os.path.dirname(model_artifact_path), exist_ok=True)
-model.save_model(model_artifact_path)
+joblib.dump(model, model_artifact_path)   # 👈 joblib instead of xgb.save_model
 print(f"Model saved to {model_artifact_path}")
 
 # ----------------------------
@@ -84,7 +85,7 @@ except:
     api.create_repo(model_repo, repo_type="model", private=False)
 api.upload_file(
     path_or_fileobj=model_artifact_path,
-    path_in_repo="tourism_xgb_model.pkl",
+    path_in_repo="best_tourism_model_v1.joblib",   # 👈 consistent naming
     repo_id=model_repo,
     repo_type="model",
     token=hf_token,
