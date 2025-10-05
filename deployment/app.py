@@ -1,73 +1,48 @@
 import streamlit as st
 import pandas as pd
-from huggingface_hub import hf_hub_download
-import joblib
+import numpy as np
+import xgboost as xgb
 import os
 
 # -----------------------------
-# Load the trained tourism model
+# Load Model
 # -----------------------------
-model_path = hf_hub_download(
-    repo_id="absethi1894/MLOps",                 # 👈 consistent with pipeline
-    filename="best_tourism_model_v1.joblib",     # 👈 consistent name
-    token=os.getenv("HF_TOKEN")                  # if private repo
-)
-model = joblib.load(model_path)
+MODEL_PATH = "tourism_xgb_model.pkl"
+
+if not os.path.exists(MODEL_PATH):
+    st.error(f"Model file not found at {MODEL_PATH}. Please check deployment.")
+else:
+    model = xgb.XGBClassifier()
+    model.load_model(MODEL_PATH)
 
 # -----------------------------
-# Streamlit App UI
+# Streamlit UI
 # -----------------------------
-st.title("Tourism Product Purchase Prediction")
-st.write("""
-This application predicts the likelihood of a customer purchasing the tourism package
-based on their profile and travel-related information.
-Please provide the details below:
-""")
+st.title("Tourism Package Purchase Prediction 🧳")
+
+st.write("Fill in the details below to predict whether a customer will purchase a package.")
+
+# Example input fields (adjust based on your dataset features)
+age = st.number_input("Age", min_value=18, max_value=100, value=30)
+duration = st.number_input("Duration of Stay (days)", min_value=1, max_value=30, value=5)
+monthly_income = st.number_input("Monthly Income", min_value=1000, max_value=100000, value=50000)
+num_person_visiting = st.slider("Number of People Visiting", min_value=1, max_value=10, value=2)
+designations = st.selectbox("Designation", ["Executive", "Manager", "Senior Manager", "AVP", "VP"])
+gender = st.radio("Gender", ["Male", "Female"])
 
 # -----------------------------
-# User Inputs
+# Prepare input for model
 # -----------------------------
-gender = st.selectbox("Gender", ["Male", "Female"])
-marital_status = st.selectbox("Marital Status", ["Married", "Single", "Divorced"])
-age = st.number_input("Age", min_value=18, max_value=80, value=30)
-designation = st.selectbox("Designation", ["Executive", "Manager", "Senior Manager", "AVP", "VP"])
-occupation = st.selectbox("Occupation", ["Salaried", "Small Business", "Large Business", "Free Lancer"])
-monthly_income = st.number_input("Monthly Income (INR)", min_value=10000, max_value=500000, value=50000, step=1000)
+input_dict = {
+    "Age": age,
+    "DurationOfPitch": duration,
+    "MonthlyIncome": monthly_income,
+    "NumberOfPersonVisiting": num_person_visiting,
+    "Designation": designations,
+    "Gender": gender,
+}
 
-num_trips = st.number_input("Number of Trips", min_value=0, max_value=50, value=1)
-num_person_visiting = st.number_input("Number of Persons Visiting", min_value=1, max_value=10, value=2)
-num_children = st.number_input("Number of Children Visiting", min_value=0, max_value=5, value=0)
-
-passport = st.selectbox("Passport", [0, 1])
-own_car = st.selectbox("Own Car", [0, 1])
-
-duration_of_pitch = st.number_input("Duration of Pitch (minutes)", min_value=0, max_value=100, value=15)
-num_followups = st.number_input("Number of Followups", min_value=0, max_value=10, value=1)
-preferred_star = st.selectbox("Preferred Property Star", [3, 4, 5])
-product_pitched = st.selectbox("Product Pitched", ["Basic", "Deluxe", "Standard", "Super Deluxe", "King"])
-pitch_score = st.number_input("Pitch Satisfaction Score", min_value=1, max_value=5, value=3)
-
-# -----------------------------
-# Create DataFrame for prediction
-# -----------------------------
-input_data = pd.DataFrame([{
-    'Gender': gender,
-    'MaritalStatus': marital_status,
-    'Age': age,
-    'Designation': designation,
-    'Occupation': occupation,
-    'MonthlyIncome': monthly_income,
-    'NumberOfTrips': num_trips,
-    'NumberOfPersonVisiting': num_person_visiting,
-    'NumberOfChildrenVisiting': num_children,
-    'Passport': passport,
-    'OwnCar': own_car,
-    'DurationOfPitch': duration_of_pitch,
-    'NumberOfFollowups': num_followups,
-    'PreferredPropertyStar': preferred_star,
-    'ProductPitched': product_pitched,
-    'PitchSatisfactionScore': pitch_score
-}])
+input_data = pd.DataFrame([input_dict])
 
 # -----------------------------
 # Prediction
@@ -78,6 +53,6 @@ if st.button("Predict Purchase"):
         result = "Will Purchase Package ✅"
     else:
         result = "Will Not Purchase Package ❌"
-        
+    
     st.subheader("Prediction Result:")
     st.success(f"The model predicts: **{result}**")
